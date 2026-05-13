@@ -1,17 +1,17 @@
 module "s3_bucket" {
   source = "../module"
 
-  name        = var.name
-  environment = var.environment
-  versioning  = true
+  bucket_name     = var.bucket_name
+  environment     = var.environment
+  versioning      = var.enable_versioning
+  encryption_type = var.encryption_type
+  kms_key_id      = var.kms_key_id
+  lifecycle_rules = var.lifecycle_rules
 
-  enable_lifecycle     = true
-  lifecycle_current    = local.lifecycle_by_env[var.environment].current
-  lifecycle_noncurrent = local.lifecycle_by_env[var.environment].noncurrent
+  read_role_arns   = var.read_role_arns
+  write_role_arns  = var.write_role_arns
+  delete_role_arns = var.delete_role_arns
+  admin_role_arns  = var.admin_role_arns
 
-  # Let the module (and AWS) generate a unique final name by providing a prefix.
-  bucket_name   = ""
-  bucket_prefix = lower(format("rb-%s-%s-%s-%s-", var.environment, var.name, var.region, formatdate("YYYYMMDDHHmmss", timestamp())))
-
-  tags = { Name = var.name }
+  tags = var.tags
 }

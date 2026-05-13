@@ -1,75 +1,98 @@
-variable "name" {
-  description = "Logical name of the bucket (application or purpose)"
+variable "bucket_name" {
+  description = "Base bucket name supplied by the caller. The module appends the creation date and a random suffix."
   type        = string
+
+  validation {
+    condition     = length(trim(regexreplace(lower(var.bucket_name), "[^a-z0-9-]", "-"), "-")) > 0
+    error_message = "bucket_name must contain at least one letter or number."
+  }
 }
 
 variable "environment" {
-  description = "Environment (dev, test, prod)"
+  description = "Environment tag for the bucket."
   type        = string
 }
 
 variable "tags" {
-  description = "Additional tags to apply to the bucket"
+  description = "Additional tags to apply to the bucket."
   type        = map(string)
   default     = {}
 }
 
-variable "bucket_name" {
-  description = "Full S3 bucket name"
-  type        = string
-}
-variable "bucket_prefix" {
-  description = "Prefix for provider-generated bucket names (provider will append a unique suffix)."
-  type        = string
-  default     = ""
-}
 variable "versioning" {
-  description = "Enable S3 versioning"
-  type        = bool
-  default     = true
-}
-
-variable "enable_encryption" {
-  description = "Enable server-side encryption"
+  description = "Enable S3 versioning."
   type        = bool
   default     = true
 }
 
 variable "encryption_type" {
-  description = "Encryption type: AES256 or aws:kms"
+  description = "Encryption type for the bucket. Supported values are AES256 and aws:kms."
   type        = string
   default     = "AES256"
 
   validation {
     condition     = contains(["AES256", "aws:kms"], var.encryption_type)
-    error_message = "encryption_type must be AES256 or aws:kms"
+    error_message = "encryption_type must be either AES256 or aws:kms."
   }
 }
 
 variable "kms_key_id" {
-  description = "KMS key ID or ARN (required if aws:kms is used)"
+  description = "KMS key ID or ARN to use when encryption_type is aws:kms."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.encryption_type != "aws:kms" || var.kms_key_id != null
+    error_message = "kms_key_id must be provided when encryption_type is aws:kms."
+  }
+
+  validation {
+    condition     = var.encryption_type == "aws:kms" || var.kms_key_id == null
+    error_message = "kms_key_id must be null when encryption_type is AES256."
+  }
 }
 
-variable "allowed_role_arns" {
-  description = "IAM role ARNs allowed to access the bucket"
+variable "lifecycle_rules" {
+  description = "Lifecycle rules to apply to the bucket."
+  type = list(object({
+    id                                   = string
+    enabled                              = optional(bool, true)
+    prefix                               = optional(string)
+    current_transitions                  = optional(list(object({
+      days          = number
+      storage_class = string
+    })), [])
+    expiration_days                      = optional(number)
+    noncurrent_transitions               = optional(list(object({
+      noncurrent_days = number
+      storage_class   = string
+    })), [])
+    noncurrent_expiration_days           = optional(number)
+    abort_incomplete_multipart_upload_days = optional(number)
+  }))
+  default = []
+}
+
+variable "read_role_arns" {
+  description = "IAM role ARNs that can list the bucket and read objects."
   type        = list(string)
   default     = []
 }
 
-variable "enable_lifecycle" {
-  description = "Enable lifecycle rules"
-  type        = bool
-  default     = true
+variable "write_role_arns" {
+  description = "IAM role ARNs that can upload objects."
+  type        = list(string)
+  default     = []
 }
 
-variable "lifecycle_current" {
-  description = "Lifecycle rules for current object versions"
-  type        = map(number)
+variable "delete_role_arns" {
+  description = "IAM role ARNs that can delete objects."
+  type        = list(string)
+  default     = []
 }
 
-variable "lifecycle_noncurrent" {
-  description = "Lifecycle rules for noncurrent (versioned) objects"
-  type        = map(number)
+variable "admin_role_arns" {
+  description = "IAM role ARNs that should receive full bucket access."
+  type        = list(string)
+  default     = []
 }
