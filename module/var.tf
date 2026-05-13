@@ -3,7 +3,7 @@ variable "bucket_name" {
   type        = string
 
   validation {
-    condition     = length(trim(regexreplace(lower(var.bucket_name), "[^a-z0-9-]", "-"), "-")) > 0
+    condition     = length(trim(replace(lower(var.bucket_name), "/[^a-z0-9-]/", "-"), "-")) > 0
     error_message = "bucket_name must contain at least one letter or number."
   }
 }
@@ -55,32 +55,32 @@ variable "kms_key_id" {
 variable "lifecycle_rules" {
   description = "Lifecycle rules to apply to the bucket."
   type = list(object({
-    id                                   = string
-    enabled                              = optional(bool, true)
-    prefix                               = optional(string)
-    current_transitions                  = optional(list(object({
+    id      = string
+    enabled = optional(bool, true)
+    prefix  = optional(string)
+    current_transitions = optional(list(object({
       days          = number
       storage_class = string
     })), [])
-    expiration_days                      = optional(number)
-    noncurrent_transitions               = optional(list(object({
+    expiration_days = optional(number)
+    noncurrent_transitions = optional(list(object({
       noncurrent_days = number
       storage_class   = string
     })), [])
-    noncurrent_expiration_days           = optional(number)
+    noncurrent_expiration_days             = optional(number)
     abort_incomplete_multipart_upload_days = optional(number)
   }))
   default = []
 }
 
 variable "read_role_arns" {
-  description = "IAM role ARNs that can list the bucket and read objects."
+  description = "IAM role ARNs that can list the bucket and read objects. When using aws:kms, these roles also need KMS decrypt access on the referenced key."
   type        = list(string)
   default     = []
 }
 
 variable "write_role_arns" {
-  description = "IAM role ARNs that can upload objects."
+  description = "IAM role ARNs that can upload objects. When using aws:kms, these roles also need KMS encrypt and data-key permissions on the referenced key."
   type        = list(string)
   default     = []
 }
@@ -92,7 +92,7 @@ variable "delete_role_arns" {
 }
 
 variable "admin_role_arns" {
-  description = "IAM role ARNs that should receive full bucket access."
+  description = "IAM role ARNs that should receive full bucket access. When using aws:kms, these roles also need matching KMS administrative or usage permissions on the referenced key."
   type        = list(string)
   default     = []
 }

@@ -1,5 +1,5 @@
 locals {
-  normalized_bucket_base = substr(trim(regexreplace(lower(var.bucket_name), "[^a-z0-9-]", "-"), "-"), 0, 47)
+  normalized_bucket_base = substr(trim(replace(lower(var.bucket_name), "/[^a-z0-9-]/", "-"), "-"), 0, 47)
   final_bucket_name      = "${local.normalized_bucket_base}-${formatdate("YYYYMMDD", time_static.created.rfc3339)}-${random_string.suffix.result}"
   has_bucket_policy = (
     length(var.read_role_arns) > 0 ||
@@ -129,6 +129,33 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "kms" {
 data "aws_iam_policy_document" "bucket_policy" {
   count = local.has_bucket_policy ? 1 : 0
 
+  # Deny any request sent without TLS, regardless of the allow statements below.
+  statement {
+    sid    = "DenyInsecureTransport"
+    effect = "Deny"
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    actions = ["s3:*"]
+
+    resources = [
+      aws_s3_bucket.this.arn,
+      "${aws_s3_bucket.this.arn}/*"
+    ]
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+
+  # Attach the role ARNs you want to allow into the *_role_arns variables.
+  # If the bucket uses aws:kms, the same roles still need KMS permissions on
+  # the key itself; bucket policy alone cannot grant access to the KMS key.
   dynamic "statement" {
     for_each = length(var.read_role_arns) > 0 ? [var.read_role_arns] : []
     content {
@@ -170,6 +197,25 @@ data "aws_iam_policy_document" "bucket_policy" {
   dynamic "statement" {
     for_each = length(var.write_role_arns) > 0 ? [var.write_role_arns] : []
     content {
+      sid = "AllowWriteBucketMetadata"
+
+      principals {
+        type        = "AWS"
+        identifiers = statement.value
+      }
+
+      actions = [
+        "s3:GetBucketLocation",
+        "s3:ListBucketMultipartUploads"
+      ]
+
+      resources = [aws_s3_bucket.this.arn]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.write_role_arns) > 0 ? [var.write_role_arns] : []
+    content {
       sid = "AllowWriteObjects"
 
       principals {
@@ -179,6 +225,7 @@ data "aws_iam_policy_document" "bucket_policy" {
 
       actions = [
         "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts",
         "s3:PutObject"
       ]
 

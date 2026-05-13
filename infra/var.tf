@@ -59,19 +59,19 @@ variable "kms_key_id" {
 variable "lifecycle_rules" {
   description = "Lifecycle rules to apply to the bucket."
   type = list(object({
-    id                                   = string
-    enabled                              = optional(bool, true)
-    prefix                               = optional(string)
-    current_transitions                  = optional(list(object({
+    id      = string
+    enabled = optional(bool, true)
+    prefix  = optional(string)
+    current_transitions = optional(list(object({
       days          = number
       storage_class = string
     })), [])
-    expiration_days                      = optional(number)
-    noncurrent_transitions               = optional(list(object({
+    expiration_days = optional(number)
+    noncurrent_transitions = optional(list(object({
       noncurrent_days = number
       storage_class   = string
     })), [])
-    noncurrent_expiration_days           = optional(number)
+    noncurrent_expiration_days             = optional(number)
     abort_incomplete_multipart_upload_days = optional(number)
   }))
   default = []
