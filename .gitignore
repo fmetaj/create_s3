@@ -1,5 +1,6 @@
 # Terraform local dirs and providers
 **/.terraform/*
+.terraform.lock
 
 # State files
 *.tfstate

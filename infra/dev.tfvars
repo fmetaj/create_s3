@@ -35,17 +35,19 @@ lifecycle_rules = [
 ]
 
 read_role_arns = [
-  "arn:aws:iam::069729019498:role/s3-read-role"
+  "arn:aws:iam::905418088998:role/vizitori",
+  "arn:aws:iam::123456789012:role/developeri",
+  "arn:aws:iam::111122223333:role/fshiresi"
 ]
 
 write_role_arns = [
-  "arn:aws:iam::069729019498:role/s3-write-role"
+  "arn:aws:iam::905418088998:role/developeri"
 ]
 
 delete_role_arns = [
-  "arn:aws:iam::069729019498:role/s3-delete-role"
+  "arn:aws:iam::905418088998:role/fshiresi"
 ]
 
 admin_role_arns = [
-  "arn:aws:iam::069729019498:role/s3-admin-role"
+  "arn:aws:iam::905418088998:role/administratori"
 ]

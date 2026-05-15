@@ -7,6 +7,44 @@ locals {
     length(var.delete_role_arns) > 0 ||
     length(var.admin_role_arns) > 0
   )
+  policy_statements = [
+    {
+      sid         = "AllowReadBucketMetadata"
+      principals  = var.read_role_arns
+      actions     = ["s3:GetBucketLocation", "s3:ListBucket"]
+      resource_type = "bucket"
+    },
+    {
+      sid         = "AllowReadObjects"
+      principals  = var.read_role_arns
+      actions     = ["s3:GetObject", "s3:GetObjectVersion"]
+      resource_type = "objects"
+    },
+    {
+      sid         = "AllowWriteBucketMetadata"
+      principals  = var.write_role_arns
+      actions     = ["s3:GetBucketLocation", "s3:ListBucketMultipartUploads"]
+      resource_type = "bucket"
+    },
+    {
+      sid         = "AllowWriteObjects"
+      principals  = var.write_role_arns
+      actions     = ["s3:AbortMultipartUpload", "s3:ListMultipartUploadParts", "s3:PutObject"]
+      resource_type = "objects"
+    },
+    {
+      sid         = "AllowDeleteObjects"
+      principals  = var.delete_role_arns
+      actions     = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
+      resource_type = "objects"
+    },
+    {
+      sid         = "AllowAdminAccess"
+      principals  = var.admin_role_arns
+      actions     = ["s3:*"]
+      resource_type = "both"
+    }
+  ]
 }
 
 resource "time_static" "created" {}
@@ -153,121 +191,22 @@ data "aws_iam_policy_document" "bucket_policy" {
     }
   }
 
-  # Attach the role ARNs you want to allow into the *_role_arns variables.
-  # If the bucket uses aws:kms, the same roles still need KMS permissions on
-  # the key itself; bucket policy alone cannot grant access to the KMS key.
+  # Consolidated allow statements generated from local.policy_statements.
   dynamic "statement" {
-    for_each = length(var.read_role_arns) > 0 ? [var.read_role_arns] : []
+    for_each = [for s in local.policy_statements : s if length([for id in s.principals : id if length(trimspace(id)) > 0 && startswith(id, "arn:aws:iam::")]) > 0]
     content {
-      sid = "AllowReadBucketMetadata"
+      sid = statement.value.sid
 
       principals {
-        type        = "AWS"
-        identifiers = statement.value
+        type = "AWS"
+        identifiers = [for id in statement.value.principals : id if length(trimspace(id)) > 0 && startswith(id, "arn:aws:iam::")]
       }
 
-      actions = [
-        "s3:GetBucketLocation",
-        "s3:ListBucket"
-      ]
+      actions = statement.value.actions
 
-      resources = [aws_s3_bucket.this.arn]
-    }
-  }
-
-  dynamic "statement" {
-    for_each = length(var.read_role_arns) > 0 ? [var.read_role_arns] : []
-    content {
-      sid = "AllowReadObjects"
-
-      principals {
-        type        = "AWS"
-        identifiers = statement.value
-      }
-
-      actions = [
-        "s3:GetObject",
-        "s3:GetObjectVersion"
-      ]
-
-      resources = ["${aws_s3_bucket.this.arn}/*"]
-    }
-  }
-
-  dynamic "statement" {
-    for_each = length(var.write_role_arns) > 0 ? [var.write_role_arns] : []
-    content {
-      sid = "AllowWriteBucketMetadata"
-
-      principals {
-        type        = "AWS"
-        identifiers = statement.value
-      }
-
-      actions = [
-        "s3:GetBucketLocation",
-        "s3:ListBucketMultipartUploads"
-      ]
-
-      resources = [aws_s3_bucket.this.arn]
-    }
-  }
-
-  dynamic "statement" {
-    for_each = length(var.write_role_arns) > 0 ? [var.write_role_arns] : []
-    content {
-      sid = "AllowWriteObjects"
-
-      principals {
-        type        = "AWS"
-        identifiers = statement.value
-      }
-
-      actions = [
-        "s3:AbortMultipartUpload",
-        "s3:ListMultipartUploadParts",
-        "s3:PutObject"
-      ]
-
-      resources = ["${aws_s3_bucket.this.arn}/*"]
-    }
-  }
-
-  dynamic "statement" {
-    for_each = length(var.delete_role_arns) > 0 ? [var.delete_role_arns] : []
-    content {
-      sid = "AllowDeleteObjects"
-
-      principals {
-        type        = "AWS"
-        identifiers = statement.value
-      }
-
-      actions = [
-        "s3:DeleteObject",
-        "s3:DeleteObjectVersion"
-      ]
-
-      resources = ["${aws_s3_bucket.this.arn}/*"]
-    }
-  }
-
-  dynamic "statement" {
-    for_each = length(var.admin_role_arns) > 0 ? [var.admin_role_arns] : []
-    content {
-      sid = "AllowAdminAccess"
-
-      principals {
-        type        = "AWS"
-        identifiers = statement.value
-      }
-
-      actions = ["s3:*"]
-
-      resources = [
-        aws_s3_bucket.this.arn,
-        "${aws_s3_bucket.this.arn}/*"
-      ]
+      resources = statement.value.resource_type == "bucket" ? [aws_s3_bucket.this.arn] : (
+        statement.value.resource_type == "objects" ? ["${aws_s3_bucket.this.arn}/*"] : [aws_s3_bucket.this.arn, "${aws_s3_bucket.this.arn}/*"]
+      )
     }
   }
 }
