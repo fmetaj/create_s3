@@ -1,0 +1,41 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Calibri;}}
+\fs24
+{\b S3 Module Analysis}\par\par
+{\b Overview}\par
+Terraform code to provision a reusable S3 bucket module and an example root/infrastructure that instantiates it.\par\par
+{\b Layout}\par
+Root infra in infra/ calls the bucket module in module/.\par\par
+{\b High-level flow}\par
+Root config sets provider and global vars, passes values into the module. The module builds the bucket and related resources and exposes outputs.\par\par
+{\b What infra/main.tf does}\par
+Instantiates the module and passes bucket_name, environment, versioning, encryption_type, kms_key_id, lifecycle_rules, role ARNs, and tags.\par\par
+{\b Provider & requirements}\par
+Terraform >= 1.3.0; providers: hashicorp/aws (~>5.0), random, time. Provider configured with var.region.\par\par
+{\b Variables (root and module)}\par
+Root variables include region, bucket_name, environment, tags, enable_versioning, encryption_type, kms_key_id, lifecycle_rules, and role ARN lists. Module variables mirror these with validations.\par\par
+{\b Bucket naming}\par
+Normalized base (lowercase, sanitized, trimmed to 47 chars) + date (YYYYMMDD) + random numeric suffix (6). This ensures valid, human-readable, unique names.\par\par
+{\b Versioning}\par
+Controlled by versioning flag; aws_s3_bucket_versioning sets status to Enabled or Suspended.\par\par
+{\b Lifecycle rules}\par
+Accepts complex lifecycle_rules objects and uses dynamic blocks to build aws_s3_bucket_lifecycle_configuration with optional nested fields.\par\par
+{\b Encryption}\par
+Supports AES256 and aws:kms. AES256 uses SSE-AES; aws:kms uses provided kms_key_id and enables bucket key.\par\par
+{\b Bucket policy & access control}\par
+Generates DenyInsecureTransport statement to block non-TLS. Builds allow statements for provided role ARNs and creates aws_s3_bucket_policy only when roles are supplied. Enforces public access block.\par\par
+{\b Other resources}\par
+time_static.created for deterministic date; random_string.suffix for uniqueness; public access block to prevent public buckets.\par\par
+{\b Outputs}\par
+Module and root expose bucket name and ARN.\par\par
+{\b Example values (dev.tfvars)}\par
+Shows bucket_name 'cloud', environment 'dev', encryption_type 'aws:kms', kms_key_id ARN, lifecycle_rules with transitions, and role ARNs for read/admin.\par\par
+{\b Security posture & best practices}\par
+Good: encryption support, TLS enforcement, public access block, least-privilege policy generation, deterministic naming. Consider: KMS key policy management, optional prevent_destroy, access logging, and richer monitoring.\par\par
+{\b How to run / test locally}\par
+terraform init\par
+terraform plan -var-file=infra/dev.tfvars\par
+terraform apply -var-file=infra/dev.tfvars\par\par
+{\b Presentation talking points}\par
+Purpose, design decisions (naming, dynamic lifecycle handling), security highlights (TLS deny, public access block, KMS), reusability, and next steps (KMS policies, logging, destroy protection).\par
+}

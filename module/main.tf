@@ -1,6 +1,6 @@
 locals {
   normalized_bucket_base = substr(trim(replace(lower(var.bucket_name), "/[^a-z0-9-]/", "-"), "-"), 0, 47)
-  final_bucket_name      = "${local.normalized_bucket_base}-${formatdate("YYYYMMDD", time_static.created.rfc3339)}-${random_string.suffix.result}"
+  final_bucket_name      = "${local.normalized_bucket_base}-${formatdate("YYYYMMDD-HHMMSS", time_static.created.rfc3339)}"
   has_bucket_policy = (
     length(var.read_role_arns) > 0 ||
     length(var.write_role_arns) > 0 ||
@@ -48,13 +48,6 @@ locals {
 }
 
 resource "time_static" "created" {}
-
-resource "random_string" "suffix" {
-  length  = 6
-  upper   = false
-  special = false
-  numeric = true
-}
 
 resource "aws_s3_bucket" "this" {
   bucket = local.final_bucket_name
