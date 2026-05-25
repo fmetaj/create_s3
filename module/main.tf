@@ -15,28 +15,10 @@ locals {
       resource_type = "bucket"
     },
     {
-      sid         = "AllowReadObjects"
-      principals  = var.read_role_arns
-      actions     = ["s3:GetObject", "s3:GetObjectVersion"]
-      resource_type = "objects"
-    },
-    {
       sid         = "AllowWriteBucketMetadata"
       principals  = var.write_role_arns
       actions     = ["s3:GetBucketLocation", "s3:ListBucketMultipartUploads"]
       resource_type = "bucket"
-    },
-    {
-      sid         = "AllowWriteObjects"
-      principals  = var.write_role_arns
-      actions     = ["s3:AbortMultipartUpload", "s3:ListMultipartUploadParts", "s3:PutObject"]
-      resource_type = "objects"
-    },
-    {
-      sid         = "AllowDeleteObjects"
-      principals  = var.delete_role_arns
-      actions     = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
-      resource_type = "objects"
     },
     {
       sid         = "AllowAdminAccess"
