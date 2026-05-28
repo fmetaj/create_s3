@@ -1,32 +1,40 @@
 locals {
   normalized_bucket_base = substr(trim(replace(lower(var.bucket_name), "/[^a-z0-9-]/", "-"), "-"), 0, 47)
-  final_bucket_name      = "${local.normalized_bucket_base}-${formatdate("YYYYMMDD-HHMMSS", time_static.created.rfc3339)}"
-  has_bucket_policy = (
-    length(var.read_role_arns) > 0 ||
-    length(var.write_role_arns) > 0 ||
-    length(var.delete_role_arns) > 0 ||
-    length(var.admin_role_arns) > 0
-  )
-  policy_statements = [
-    {
-      sid         = "AllowReadBucketMetadata"
-      principals  = var.read_role_arns
-      actions     = ["s3:GetBucketLocation", "s3:ListBucket"]
-      resource_type = "bucket"
-    },
-    {
-      sid         = "AllowWriteBucketMetadata"
-      principals  = var.write_role_arns
-      actions     = ["s3:GetBucketLocation", "s3:ListBucketMultipartUploads"]
-      resource_type = "bucket"
-    },
-    {
-      sid         = "AllowAdminAccess"
-      principals  = var.admin_role_arns
-      actions     = ["s3:*"]
-      resource_type = "both"
-    }
-  ]
+  final_bucket_name = "${local.normalized_bucket_base}-${formatdate("YYYYMMDDhhmmss", time_static.created.rfc3339)}"
+  has_bucket_policy = true
+
+policy_statements = [
+  {
+    sid           = "AllowReadAccess"
+    principals    = [aws_iam_role.read.arn]
+    actions       = [
+      "s3:GetObject",
+      "s3:ListBucket"
+    ]
+    resource_type = "both"
+  },
+
+  {
+    sid           = "AllowOfficerAccess"
+    principals    = [aws_iam_role.officer.arn]
+    actions       = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:ListBucket"
+    ]
+    resource_type = "both"
+  },
+
+  {
+    sid           = "AllowOperatorAccess"
+    principals    = [aws_iam_role.operator.arn]
+    actions       = [
+      "s3:*"
+    ]
+    resource_type = "both"
+  }
+]
 }
 
 resource "time_static" "created" {}
@@ -113,6 +121,17 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     }
   }
 }
+resource "aws_kms_key" "this" {
+  count = var.encryption_type == "aws:kms" ? 1 : 0
+
+  description             = "KMS key for S3 bucket"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
+
+
+
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "aes256" {
   count  = var.encryption_type == "AES256" ? 1 : 0
@@ -134,10 +153,176 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "kms" {
 
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
-      kms_master_key_id = var.kms_key_id
+      kms_master_key_id = aws_kms_key.this[0].arn
     }
   }
+}# =========================
+# READ ROLE
+# =========================
+
+resource "aws_iam_role" "read" {
+  name = "${local.final_bucket_name}-read"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Principal = {
+          AWS = "arn:aws:iam::763487052879:root"
+        }
+
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
 }
+
+resource "aws_iam_policy" "read" {
+  name = "${local.final_bucket_name}-read-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+
+        Resource = [
+          aws_s3_bucket.this.arn,
+          "${aws_s3_bucket.this.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "read" {
+  role       = aws_iam_role.read.name
+  policy_arn = aws_iam_policy.read.arn
+}
+
+# =========================
+# OFFICER ROLE
+# =========================
+
+resource "aws_iam_role" "officer" {
+  name = "${local.final_bucket_name}-officer"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Principal = {
+          AWS = "arn:aws:iam::763487052879:root"
+        }
+
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "officer" {
+  name = "${local.final_bucket_name}-officer-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+
+        Resource = [
+          aws_s3_bucket.this.arn,
+          "${aws_s3_bucket.this.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "officer" {
+  role       = aws_iam_role.officer.name
+  policy_arn = aws_iam_policy.officer.arn
+}
+
+# =========================
+# OPERATOR ROLE
+# =========================
+
+resource "aws_iam_role" "operator" {
+  name = "${local.final_bucket_name}-operator"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Principal = {
+          AWS = "arn:aws:iam::763487052879:root"
+        }
+
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "operator" {
+  name = "${local.final_bucket_name}-operator-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Action = [
+          "s3:*"
+        ]
+
+        Resource = [
+          aws_s3_bucket.this.arn,
+          "${aws_s3_bucket.this.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "operator" {
+  role       = aws_iam_role.operator.name
+  policy_arn = aws_iam_policy.operator.arn
+}
+
+
+    
+  
+
+
+  
+
+
+
+
 
 data "aws_iam_policy_document" "bucket_policy" {
   count = local.has_bucket_policy ? 1 : 0

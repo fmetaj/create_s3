@@ -36,21 +36,7 @@ variable "encryption_type" {
   }
 }
 
-variable "kms_key_id" {
-  description = "KMS key ID or ARN to use when encryption_type is aws:kms."
-  type        = string
-  default     = null
 
-  validation {
-    condition     = var.encryption_type != "aws:kms" || var.kms_key_id != null
-    error_message = "kms_key_id must be provided when encryption_type is aws:kms."
-  }
-
-  validation {
-    condition     = var.encryption_type == "aws:kms" || var.kms_key_id == null
-    error_message = "kms_key_id must be null when encryption_type is AES256."
-  }
-}
 
 variable "lifecycle_rules" {
   description = "Lifecycle rules to apply to the bucket."
@@ -73,26 +59,7 @@ variable "lifecycle_rules" {
   default = []
 }
 
-variable "read_role_arns" {
-  description = "IAM role ARNs that can list the bucket and read objects. When using aws:kms, these roles also need KMS decrypt access on the referenced key."
-  type        = list(string)
-  default     = []
-}
 
-variable "write_role_arns" {
-  description = "IAM role ARNs that can upload objects. When using aws:kms, these roles also need KMS encrypt and data-key permissions on the referenced key."
-  type        = list(string)
-  default     = []
-}
 
-variable "delete_role_arns" {
-  description = "IAM role ARNs that can delete objects."
-  type        = list(string)
-  default     = []
-}
 
-variable "admin_role_arns" {
-  description = "IAM role ARNs that should receive full bucket access. When using aws:kms, these roles also need matching KMS administrative or usage permissions on the referenced key."
-  type        = list(string)
-  default     = []
-}
+
