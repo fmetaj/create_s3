@@ -1,50 +1,79 @@
-locals {
-  normalized_bucket_base = substr(trim(replace(lower(var.bucket_name), "/[^a-z0-9-]/", "-"), "-"), 0, 47)
-  final_bucket_name = "${local.normalized_bucket_base}-${formatdate("YYYYMMDDhhmmss", time_static.created.rfc3339)}"
-  has_bucket_policy = true
-
-policy_statements = [
-  {
-    sid           = "AllowReadAccess"
-    principals    = [aws_iam_role.read.arn]
-    actions       = [
-      "s3:GetObject",
-      "s3:ListBucket"
-    ]
-    resource_type = "both"
-  },
-
-  {
-    sid           = "AllowOfficerAccess"
-    principals    = [aws_iam_role.officer.arn]
-    actions       = [
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:DeleteObject",
-      "s3:ListBucket"
-    ]
-    resource_type = "both"
-  },
-
-  {
-    sid           = "AllowOperatorAccess"
-    principals    = [aws_iam_role.operator.arn]
-    actions       = [
-      "s3:*"
-    ]
-    resource_type = "both"
-  }
-]
+resource "random_id" "bucket_suffix" {
+  byte_length = 3
 }
 
-resource "time_static" "created" {}
+locals {
+  normalized_bucket_base = substr(
+    trim(replace(lower(var.bucket_name), "/[^a-z0-9-]/", "-"), "-"),
+    0,
+    47
+  )
+
+  final_bucket_name = "${local.normalized_bucket_base}-${random_id.bucket_suffix.hex}"
+
+  has_bucket_policy = true
+
+  policy_statements = [
+    {
+      sid        = "AllowReadAccess"
+      principals = [aws_iam_role.read.arn]
+
+      actions = [
+        "s3:GetObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:ListBucketMultipartUploads",
+        "s3:GetObjectVersion"
+      ]
+
+      resource_type = "both"
+    },
+
+    {
+      sid        = "AllowWriteAccess"
+      principals = [aws_iam_role.write.arn]
+
+      actions = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts",
+        "s3:GetBucketLocation",
+        "s3:GetObjectVersion",
+        "s3:PutObjectVersionAcl"
+      ]
+
+      resource_type = "both"
+    },
+
+    {
+      sid        = "AllowOperatorAccess"
+      principals = [aws_iam_role.operator.arn]
+
+      actions = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketAcl",
+        "s3:PutBucketAcl",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:GetBucketLifecycle",
+        "s3:PutBucketLifecycle",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning"
+      ]
+
+      resource_type = "both"
+    }
+  ]
+}
 
 resource "aws_s3_bucket" "this" {
   bucket = local.final_bucket_name
-
-  lifecycle {
-    prevent_destroy = false
-  }
 
   tags = merge(var.tags, {
     Name        = local.final_bucket_name
@@ -66,6 +95,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
 
   dynamic "rule" {
     for_each = var.lifecycle_rules
+
     content {
       id     = rule.value.id
       status = rule.value.enabled ? "Enabled" : "Disabled"
@@ -121,17 +151,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     }
   }
 }
-resource "aws_kms_key" "this" {
-  count = var.encryption_type == "aws:kms" ? 1 : 0
 
+resource "aws_kms_key" "this" {
+  count                   = var.encryption_type == "aws:kms" ? 1 : 0
   description             = "KMS key for S3 bucket"
   deletion_window_in_days = 7
   enable_key_rotation     = true
 }
-
-
-
-
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "aes256" {
   count  = var.encryption_type == "AES256" ? 1 : 0
@@ -156,8 +182,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "kms" {
       kms_master_key_id = aws_kms_key.this[0].arn
     }
   }
-}# =========================
-# READ ROLE
+}
+
+# =========================
+# IAM ROLES
 # =========================
 
 resource "aws_iam_role" "read" {
@@ -165,123 +193,89 @@ resource "aws_iam_role" "read" {
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-
-        Principal = {
-          AWS = "arn:aws:iam::763487052879:root"
-        }
-
-        Action = "sts:AssumeRole"
-      }
-    ]
+    Statement = [{
+      Effect = "Allow"
+      Principal = { AWS = "arn:aws:iam::763487052879:root" }
+      Action = "sts:AssumeRole"
+    }]
   })
 }
 
-resource "aws_iam_policy" "read" {
-  name = "${local.final_bucket_name}-read-policy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-
-    Statement = [
-      {
-        Effect = "Allow"
-
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-
-        Resource = [
-          aws_s3_bucket.this.arn,
-          "${aws_s3_bucket.this.arn}/*"
-        ]
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "read" {
-  role       = aws_iam_role.read.name
-  policy_arn = aws_iam_policy.read.arn
-}
-
-# =========================
-# OFFICER ROLE
-# =========================
-
-resource "aws_iam_role" "officer" {
-  name = "${local.final_bucket_name}-officer"
+resource "aws_iam_role" "write" {
+  name = "${local.final_bucket_name}-write"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-
-        Principal = {
-          AWS = "arn:aws:iam::763487052879:root"
-        }
-
-        Action = "sts:AssumeRole"
-      }
-    ]
+    Statement = [{
+      Effect = "Allow"
+      Principal = { AWS = "arn:aws:iam::763487052879:root" }
+      Action = "sts:AssumeRole"
+    }]
   })
 }
-
-resource "aws_iam_policy" "officer" {
-  name = "${local.final_bucket_name}-officer-policy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-
-    Statement = [
-      {
-        Effect = "Allow"
-
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-
-        Resource = [
-          aws_s3_bucket.this.arn,
-          "${aws_s3_bucket.this.arn}/*"
-        ]
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "officer" {
-  role       = aws_iam_role.officer.name
-  policy_arn = aws_iam_policy.officer.arn
-}
-
-# =========================
-# OPERATOR ROLE
-# =========================
 
 resource "aws_iam_role" "operator" {
   name = "${local.final_bucket_name}-operator"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
+    Statement = [{
+      Effect = "Allow"
+      Principal = { AWS = "arn:aws:iam::763487052879:root" }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
 
-        Principal = {
-          AWS = "arn:aws:iam::763487052879:root"
-        }
+# =========================
+# IAM POLICIES
+# =========================
 
-        Action = "sts:AssumeRole"
-      }
-    ]
+resource "aws_iam_policy" "read" {
+  name = "${local.final_bucket_name}-read-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:ListBucketMultipartUploads",
+        "s3:GetObjectVersion"
+      ]
+      Resource = [
+        aws_s3_bucket.this.arn,
+        "${aws_s3_bucket.this.arn}/*"
+      ]
+    }]
+  })
+}
+
+resource "aws_iam_policy" "write" {
+  name = "${local.final_bucket_name}-write-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts",
+        "s3:GetBucketLocation",
+        "s3:GetObjectVersion",
+        "s3:PutObjectVersionAcl"
+      ]
+      Resource = [
+        aws_s3_bucket.this.arn,
+        "${aws_s3_bucket.this.arn}/*"
+      ]
+    }]
   })
 }
 
@@ -290,22 +284,42 @@ resource "aws_iam_policy" "operator" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-
-    Statement = [
-      {
-        Effect = "Allow"
-
-        Action = [
-          "s3:*"
-        ]
-
-        Resource = [
-          aws_s3_bucket.this.arn,
-          "${aws_s3_bucket.this.arn}/*"
-        ]
-      }
-    ]
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketAcl",
+        "s3:PutBucketAcl",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:GetBucketLifecycle",
+        "s3:PutBucketLifecycle",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning"
+      ]
+      Resource = [
+        aws_s3_bucket.this.arn,
+        "${aws_s3_bucket.this.arn}/*"
+      ]
+    }]
   })
+}
+
+# =========================
+# ATTACHMENTS
+# =========================
+
+resource "aws_iam_role_policy_attachment" "read" {
+  role       = aws_iam_role.read.name
+  policy_arn = aws_iam_policy.read.arn
+}
+
+resource "aws_iam_role_policy_attachment" "write" {
+  role       = aws_iam_role.write.name
+  policy_arn = aws_iam_policy.write.arn
 }
 
 resource "aws_iam_role_policy_attachment" "operator" {
@@ -313,21 +327,11 @@ resource "aws_iam_role_policy_attachment" "operator" {
   policy_arn = aws_iam_policy.operator.arn
 }
 
-
-    
-  
-
-
-  
-
-
-
-
+# =========================
+# BUCKET POLICY
+# =========================
 
 data "aws_iam_policy_document" "bucket_policy" {
-  count = local.has_bucket_policy ? 1 : 0
-
-  # Deny any request sent without TLS, regardless of the allow statements below.
   statement {
     sid    = "DenyInsecureTransport"
     effect = "Deny"
@@ -350,31 +354,11 @@ data "aws_iam_policy_document" "bucket_policy" {
       values   = ["false"]
     }
   }
-
-  # Consolidated allow statements generated from local.policy_statements.
-  dynamic "statement" {
-    for_each = [for s in local.policy_statements : s if length([for id in s.principals : id if length(trimspace(id)) > 0 && startswith(id, "arn:aws:iam::")]) > 0]
-    content {
-      sid = statement.value.sid
-
-      principals {
-        type = "AWS"
-        identifiers = [for id in statement.value.principals : id if length(trimspace(id)) > 0 && startswith(id, "arn:aws:iam::")]
-      }
-
-      actions = statement.value.actions
-
-      resources = statement.value.resource_type == "bucket" ? [aws_s3_bucket.this.arn] : (
-        statement.value.resource_type == "objects" ? ["${aws_s3_bucket.this.arn}/*"] : [aws_s3_bucket.this.arn, "${aws_s3_bucket.this.arn}/*"]
-      )
-    }
-  }
 }
 
 resource "aws_s3_bucket_policy" "this" {
-  count  = local.has_bucket_policy ? 1 : 0
   bucket = aws_s3_bucket.this.id
-  policy = data.aws_iam_policy_document.bucket_policy[0].json
+  policy = data.aws_iam_policy_document.bucket_policy.json
 }
 
 resource "aws_s3_bucket_public_access_block" "this" {
@@ -385,3 +369,11 @@ resource "aws_s3_bucket_public_access_block" "this" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+
+
+
+
+
+
+
+
