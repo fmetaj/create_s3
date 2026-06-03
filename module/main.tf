@@ -72,6 +72,9 @@ locals {
   ]
 }
 
+
+
+
 resource "aws_s3_bucket" "this" {
   bucket = local.final_bucket_name
 
@@ -80,6 +83,39 @@ resource "aws_s3_bucket" "this" {
     Environment = var.environment
   })
 }
+
+resource "aws_s3_bucket" "logs" {
+  bucket = "${local.final_bucket_name}-logs"
+
+  tags = merge(var.tags, {
+    Name        = "${local.final_bucket_name}-logs"
+    Environment = var.environment
+    Purpose     = "access-logs"
+  })
+}
+resource "aws_s3_bucket_logging" "this" {
+  bucket = aws_s3_bucket.this.id
+
+  target_bucket = aws_s3_bucket.logs.id
+  target_prefix = "access-logs/"
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  rule {
+    id     = "delete-old-logs"
+    status = "Enabled"
+
+    filter {}
+
+    expiration {
+      days = 30
+    }
+  }
+}
+
+
 
 resource "aws_s3_bucket_versioning" "this" {
   bucket = aws_s3_bucket.this.id
@@ -370,8 +406,42 @@ resource "aws_s3_bucket_public_access_block" "this" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_policy" "logs" {
+  bucket = aws_s3_bucket.logs.id
 
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3ServerAccessLogsPolicy"
+        Effect = "Allow"
 
+        Principal = {
+          Service = "logging.s3.amazonaws.com"
+        }
+
+        Action = "s3:PutObject"
+
+        Resource = "${aws_s3_bucket.logs.arn}/*"
+
+        Condition = {
+          ArnLike = {
+            "aws:SourceArn" = aws_s3_bucket.this.arn
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_s3_bucket_public_access_block" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
 
 
 
